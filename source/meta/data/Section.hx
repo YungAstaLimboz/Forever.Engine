@@ -1,8 +1,11 @@
 package meta.data;
 
+// A single note entry stored as array: [strumTime:Float, noteData:Int, sustainLength:Float, noteType:String]
+typedef NoteData = Array<Dynamic>;
+
 typedef SwagSection =
 {
-	var sectionNotes:Array<Dynamic>;
+	var sectionNotes:Array<NoteData>;
 	var lengthInSteps:Int;
 	var typeOfSection:Int;
 	var mustHitSection:Bool;
@@ -13,7 +16,7 @@ typedef SwagSection =
 
 class Section
 {
-	public var sectionNotes:Array<Dynamic> = [];
+	public var sectionNotes:Array<NoteData> = [];
 
 	public var lengthInSteps:Int = 16;
 	public var typeOfSection:Int = 0;

@@ -131,7 +131,7 @@ class OriginalChartingState extends MusicBeatState
 		rightIcon.setPosition(gridBG.width * 0.5, -100);
 
 		FlxG.mouse.visible = true;
-		FlxG.save.bind('funkin', 'ninjamuffin99');
+		// FlxG.save.bind('funkin', 'ninjamuffin99'); // Removed: overwrites engine save
 
 		tempBpm = _song.bpm;
 
@@ -992,7 +992,7 @@ class OriginalChartingState extends MusicBeatState
 
 		for (i in _song.notes[curBar].sectionNotes)
 		{
-			if (i.strumTime == note.strumTime && i.noteData % 4 == note.noteData)
+			if (i[0] == note.strumTime && i[1] % 4 == note.noteData)
 			{
 				curSelectedNote = _song.notes[curBar].sectionNotes[swagNum];
 			}

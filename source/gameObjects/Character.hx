@@ -478,7 +478,16 @@ class Character extends FNFSprite
 					}
 				}
 				else
-					return setCharacter(x, y, 'bf');
+				{
+					if (curCharacter != 'bf')
+						return setCharacter(x, y, 'bf');
+					else
+					{
+						// Fallback: character file not found, create placeholder
+						makeGraphic(32, 32, 0xFFFF00FF);
+						trace('WARNING: Character "$curCharacter" not found, using placeholder');
+					}
+				}
 		}
 
 		// set up offsets cus why not

@@ -73,6 +73,9 @@ class PlayState extends MusicBeatState
 	private var ratingArray:Array<String> = [];
 	private var allSicks:Bool = true;
 
+	// Reusable rect for sustain clipping to avoid per-frame allocations
+	private var _sustainClipRect:FlxRect = new FlxRect();
+
 	// if you ever wanna add more keys
 	private var numberOfKeys:Int = 4;
 
@@ -306,11 +309,7 @@ class PlayState extends MusicBeatState
 			copyKey(Init.gameControls.get('RIGHT')[0])
 		];
 
-		if (!Init.trueSettings.get('Controller Mode'))
-		{
-			FlxG.stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyPress);
-			FlxG.stage.addEventListener(KeyboardEvent.KEY_UP, onKeyRelease);
-		}
+		// Input is now polled via Controls system in update(), no event listeners needed
 
 		Paths.clearUnusedMemory();
 
@@ -371,23 +370,22 @@ class PlayState extends MusicBeatState
 		return copiedArray;
 	}
 
-	var keysArray:Array<Dynamic>;
+	var keysArray:Array<Array<FlxKey>>;
 
-	public function onKeyPress(event:KeyboardEvent):Void
+	/**
+	 * Core key press handler. Accepts a key index (0-3) directly.
+	 * Used by both keyboard and controller input paths.
+	 */
+	public function onKeyDown(key:Int):Void
 	{
-		var eventKey:FlxKey = event.keyCode;
-		var key:Int = getKeyFromEvent(eventKey);
-
 		if ((key >= 0)
 			&& !plrStrums.autoplay
-			&& (FlxG.keys.checkStatus(eventKey, JUST_PRESSED) || Init.trueSettings.get('Controller Mode'))
 			&& (FlxG.keys.enabled && !paused && (FlxG.state.active || FlxG.state.persistentUpdate)))
 		{
 			if (generatedMusic)
 			{
 				var previousTime:Float = Conductor.songPosition;
 				Conductor.songPosition = songMusic.time;
-				// improved this a little bit, maybe its a lil
 				var possibleNoteList:Array<Note> = [];
 				var pressedNotes:Array<Note> = [];
 
@@ -398,12 +396,10 @@ class PlayState extends MusicBeatState
 				});
 				possibleNoteList.sort((a, b) -> Std.int(a.strumTime - b.strumTime));
 
-				// if there is a list of notes that exists for that control
 				if (possibleNoteList.length > 0)
 				{
 					var eligable = true;
 					var firstNote = true;
-					// loop through the possible notes
 					for (coolNote in possibleNoteList)
 					{
 						for (noteDouble in pressedNotes)
@@ -416,14 +412,12 @@ class PlayState extends MusicBeatState
 
 						if (eligable)
 						{
-							goodNoteHit(coolNote, boyfriend, plrStrums, firstNote); // then hit the note
+							goodNoteHit(coolNote, boyfriend, plrStrums, firstNote);
 							pressedNotes.push(coolNote);
 						}
-						// end of this little check
 					}
-					//
 				}
-				else // else just call bad notes
+				else
 					if (!Init.trueSettings.get('Ghost Tapping'))
 						missNoteCheck(true, key, boyfriend, true);
 				Conductor.songPosition = previousTime;
@@ -435,17 +429,35 @@ class PlayState extends MusicBeatState
 		}
 	}
 
-	public function onKeyRelease(event:KeyboardEvent):Void
+	/**
+	 * Core key release handler. Accepts a key index (0-3) directly.
+	 */
+	public function onKeyUp(key:Int):Void
+	{
+		if (FlxG.keys.enabled && !paused && (FlxG.state.active || FlxG.state.persistentUpdate))
+		{
+			if (key >= 0 && plrStrums.receptors.members[key] != null)
+				plrStrums.receptors.members[key].playAnim('static');
+		}
+	}
+
+	public function onKeyPress(event:KeyboardEvent):Void
 	{
 		var eventKey:FlxKey = event.keyCode;
 		var key:Int = getKeyFromEvent(eventKey);
 
-		if (FlxG.keys.enabled && !paused && (FlxG.state.active || FlxG.state.persistentUpdate))
-		{
-			// receptor reset
-			if (key >= 0 && plrStrums.receptors.members[key] != null)
-				plrStrums.receptors.members[key].playAnim('static');
-		}
+		if (key >= 0
+			&& !plrStrums.autoplay
+			&& (FlxG.keys.checkStatus(eventKey, JUST_PRESSED) || Init.trueSettings.get('Controller Mode')))
+			onKeyDown(key);
+	}
+
+	public function onKeyRelease(event:KeyboardEvent):Void
+	{
+		var eventKey:FlxKey = event.keyCode;
+		var key:Int = getKeyFromEvent(eventKey);
+		if (key >= 0)
+			onKeyUp(key);
 	}
 
 	private function getKeyFromEvent(key:FlxKey):Int
@@ -466,11 +478,35 @@ class PlayState extends MusicBeatState
 
 	override public function destroy()
 	{
-		if (!Init.trueSettings.get('Controller Mode'))
+		// Clean up cameras to prevent memory leaks
+		if (camHUD != null)
 		{
-			FlxG.stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKeyPress);
-			FlxG.stage.removeEventListener(KeyboardEvent.KEY_UP, onKeyRelease);
+			FlxG.cameras.remove(camHUD);
+			camHUD.destroy();
+			camHUD = null;
 		}
+		if (camAlt != null)
+		{
+			FlxG.cameras.remove(camAlt);
+			camAlt.destroy();
+			camAlt = null;
+		}
+
+		// Clean up static references
+		if (songMusic != null)
+		{
+			songMusic.stop();
+			songMusic = null;
+		}
+		if (vocals != null)
+		{
+			vocals.stop();
+			vocals = null;
+		}
+
+		opponent = null;
+		gf = null;
+		boyfriend = null;
 
 		super.destroy();
 	}
@@ -665,33 +701,23 @@ class PlayState extends MusicBeatState
 
 			noteCalls();
 
-			if (Init.trueSettings.get('Controller Mode'))
-				controllerInput();
-		}
-	}
-
-	// maybe theres a better place to put this, idk -saw
-	function controllerInput()
-	{
-		var justPressArray:Array<Bool> = [controls.LEFT_P, controls.DOWN_P, controls.UP_P, controls.RIGHT_P];
-
-		var justReleaseArray:Array<Bool> = [controls.LEFT_R, controls.DOWN_R, controls.UP_R, controls.RIGHT_R];
-
-		if (justPressArray.contains(true))
-		{
-			for (i in 0...justPressArray.length)
+			// Poll input via Controls system (works for both keyboard and gamepad)
+			if (!plrStrums.autoplay)
 			{
-				if (justPressArray[i])
-					onKeyPress(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, true, -1, keysArray[i][0]));
-			}
-		}
+				var justPressArray:Array<Bool> = [controls.LEFT_P, controls.DOWN_P, controls.UP_P, controls.RIGHT_P];
+				var justReleaseArray:Array<Bool> = [controls.LEFT_R, controls.DOWN_R, controls.UP_R, controls.RIGHT_R];
 
-		if (justReleaseArray.contains(true))
-		{
-			for (i in 0...justReleaseArray.length)
-			{
-				if (justReleaseArray[i])
-					onKeyRelease(new KeyboardEvent(KeyboardEvent.KEY_UP, true, true, -1, keysArray[i][0]));
+				for (i in 0...justPressArray.length)
+				{
+					if (justPressArray[i])
+						onKeyDown(i);
+				}
+
+				for (i in 0...justReleaseArray.length)
+				{
+					if (justReleaseArray[i])
+						onKeyUp(i);
+				}
 			}
 		}
 	}
@@ -732,14 +758,15 @@ class PlayState extends MusicBeatState
 					var receptorPosY:Float = strumline.receptors.members[Math.floor(daNote.noteData)].y + Note.swagWidth / 6;
 					var psuedoY:Float = (downscrollMultiplier * -((Conductor.songPosition - daNote.strumTime) * (0.45 * roundedSpeed)));
 					var psuedoX = 25 + daNote.noteVisualOffset;
+					var dirRad = daNote.noteDirectionRad;
 
 					daNote.y = receptorPosY
-						+ (Math.cos(flixel.math.FlxAngle.asRadians(daNote.noteDirection)) * psuedoY)
-						+ (Math.sin(flixel.math.FlxAngle.asRadians(daNote.noteDirection)) * psuedoX);
+						+ (Math.cos(dirRad) * psuedoY)
+						+ (Math.sin(dirRad) * psuedoX);
 					// painful math equation
 					daNote.x = strumline.receptors.members[Math.floor(daNote.noteData)].x
-						+ (Math.cos(flixel.math.FlxAngle.asRadians(daNote.noteDirection)) * psuedoX)
-						+ (Math.sin(flixel.math.FlxAngle.asRadians(daNote.noteDirection)) * psuedoY);
+						+ (Math.cos(dirRad) * psuedoX)
+						+ (Math.sin(dirRad) * psuedoY);
 
 					// also set note rotation
 					daNote.angle = -daNote.noteDirection;
@@ -775,10 +802,9 @@ class PlayState extends MusicBeatState
 								&& daNote.y - daNote.offset.y * daNote.scale.y + daNote.height >= center
 								&& (strumline.autoplay || (daNote.wasGoodHit || (daNote.prevNote.wasGoodHit && !daNote.canBeHit))))
 							{
-								var swagRect = new FlxRect(0, 0, daNote.frameWidth, daNote.frameHeight);
-								swagRect.height = (center - daNote.y) / daNote.scale.y;
-								swagRect.y = daNote.frameHeight - swagRect.height;
-								daNote.clipRect = swagRect;
+							daNote.clipRect = FlxRect.get(0, 0, daNote.frameWidth, daNote.frameHeight);
+							daNote.clipRect.height = (center - daNote.y) / daNote.scale.y;
+							daNote.clipRect.y = daNote.frameHeight - daNote.clipRect.height;
 							}
 						}
 						else
@@ -787,10 +813,9 @@ class PlayState extends MusicBeatState
 								&& daNote.y + daNote.offset.y * daNote.scale.y <= center
 								&& (strumline.autoplay || (daNote.wasGoodHit || (daNote.prevNote.wasGoodHit && !daNote.canBeHit))))
 							{
-								var swagRect = new FlxRect(0, 0, daNote.width / daNote.scale.x, daNote.height / daNote.scale.y);
-								swagRect.y = (center - daNote.y) / daNote.scale.y;
-								swagRect.height -= swagRect.y;
-								daNote.clipRect = swagRect;
+							daNote.clipRect = FlxRect.get(0, 0, daNote.frameWidth, daNote.frameHeight);
+							daNote.clipRect.y = (center - daNote.y) / daNote.scale.y;
+							daNote.clipRect.height -= daNote.clipRect.y;
 							}
 						}
 					}

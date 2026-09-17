@@ -86,7 +86,7 @@ class Init extends FlxState
 			NOT_FORCED
 		],
 		'Stage Opacity' => [
-			Checkmark,
+			100,
 			Selector,
 			'Darkens non-ui elements, useful if you find the characters and backgrounds distracting.',
 			NOT_FORCED
@@ -118,7 +118,7 @@ class Init extends FlxState
 			NOT_FORCED
 		],
 		// custom ones lol
-		'Offset' => [Checkmark, 3],
+		'Offset' => [0, Selector, 'Audio offset in milliseconds.', NOT_FORCED],
 		'Filter' => [
 			'none',
 			Selector,
@@ -155,7 +155,7 @@ class Init extends FlxState
 			"Enables Ghost Tapping, allowing you to press inputs without missing.",
 			NOT_FORCED
 		],
-		'Centered Notefield' => [false, Checkmark, "Center the notes, disables the enemy's notes."],
+		'Centered Notefield' => [false, Checkmark, "Center the notes, disables the enemy's notes.", NOT_FORCED],
 		"Custom Titlescreen" => [
 			false,
 			Checkmark,
@@ -236,6 +236,13 @@ class Init extends FlxState
 	override public function create():Void
 	{
 		FlxG.save.bind('foreverengine-options');
+
+		// version check — enables future migration of save format
+		var savedVersion:Null<Int> = FlxG.save.data.saveVersion;
+		if (savedVersion == null || savedVersion < SAVE_VERSION)
+			migrateSave(savedVersion);
+		FlxG.save.data.saveVersion = SAVE_VERSION;
+
 		Highscore.load();
 
 		loadSettings();
@@ -257,47 +264,86 @@ class Init extends FlxState
 		FlxG.switchState(Type.createInstance(Main.initialState, []));
 	}
 
+	static function migrateSave(fromVersion:Null<Int>):Void
+	{
+		// Future migrations go here, e.g.:
+		// if (fromVersion == null || fromVersion < 2) { /* migrate v1 -> v2 */ }
+		// if (fromVersion != null && fromVersion < 3) { /* migrate v2 -> v3 */ }
+
+		// Version 0 -> 1: no data migration needed (just added version field)
+	}
+
+	public static var SAVE_VERSION:Int = 1;
+
 	public static function loadSettings():Void
 	{
-		// set the true settings array
-		// only the first variable will be saved! the rest are for the menu stuffs
+		var didChange:Bool = false;
 
-		// IF YOU WANT TO SAVE MORE THAN ONE VALUE MAKE YOUR VALUE AN ARRAY INSTEAD
+		// set defaults for all settings
 		for (setting in gameSettings.keys())
 			trueSettings.set(setting, gameSettings.get(setting)[0]);
 
-		// NEW SYSTEM, INSTEAD OF REPLACING THE WHOLE THING I REPLACE EXISTING KEYS
-		// THAT WAY IT DOESNT HAVE TO BE DELETED IF THERE ARE SETTINGS CHANGES
-		if (FlxG.save.data.settings != null)
+		// overlay saved values on top of defaults (preserving unknown/new settings)
+		try
 		{
-			var settingsMap:Map<String, Dynamic> = FlxG.save.data.settings;
-			for (singularSetting in settingsMap.keys())
-				if (gameSettings.get(singularSetting) != null && gameSettings.get(singularSetting)[3] != FORCED)
-					trueSettings.set(singularSetting, FlxG.save.data.settings.get(singularSetting));
+			if (FlxG.save.data.settings != null)
+			{
+				var settingsMap:Map<String, Dynamic> = FlxG.save.data.settings;
+				for (singularSetting in settingsMap.keys())
+					if (gameSettings.get(singularSetting) != null && gameSettings.get(singularSetting)[3] != FORCED)
+						trueSettings.set(singularSetting, FlxG.save.data.settings.get(singularSetting));
+			}
+		}
+		catch (e)
+		{
+			// save is corrupted — keep defaults, flag for overwrite
+			didChange = true;
 		}
 
-		// lemme fix that for you
+		// validate Framerate Cap
 		if (!Std.isOfType(trueSettings.get("Framerate Cap"), Int)
 			|| trueSettings.get("Framerate Cap") < 30
 			|| trueSettings.get("Framerate Cap") > 360)
-			trueSettings.set("Framerate Cap", 30);
+		{
+			trueSettings.set("Framerate Cap", 120);
+			didChange = true;
+		}
 
+		// validate Stage Opacity
 		if (!Std.isOfType(trueSettings.get("Stage Opacity"), Int)
 			|| trueSettings.get("Stage Opacity") < 0
 			|| trueSettings.get("Stage Opacity") > 100)
+		{
 			trueSettings.set("Stage Opacity", 100);
+			didChange = true;
+		}
+
+		// validate Offset
+		if (!Std.isOfType(trueSettings.get("Offset"), Int) && !Std.isOfType(trueSettings.get("Offset"), Float))
+		{
+			trueSettings.set("Offset", 0);
+			didChange = true;
+		}
 
 		// 'hardcoded' ui skins
 		gameSettings.get("UI Skin")[4] = CoolUtil.returnAssetsLibrary('UI');
 		if (!gameSettings.get("UI Skin")[4].contains(trueSettings.get("UI Skin")))
+		{
 			trueSettings.set("UI Skin", 'default');
+			didChange = true;
+		}
 		gameSettings.get("Note Skin")[4] = CoolUtil.returnAssetsLibrary('noteskins/notes');
 		if (!gameSettings.get("Note Skin")[4].contains(trueSettings.get("Note Skin")))
+		{
 			trueSettings.set("Note Skin", 'default');
+			didChange = true;
+		}
 
-		saveSettings();
-
-		updateAll();
+		// only flush to disk if something actually changed (avoids unnecessary writes on every boot)
+		if (didChange)
+			saveSettings();
+		else
+			updateAll();
 
 		if (FlxG.save.data.volume != null)
 			FlxG.sound.volume = FlxG.save.data.volume;
@@ -307,10 +353,19 @@ class Init extends FlxState
 
 	public static function loadControls():Void
 	{
-		if ((FlxG.save.data.gameControls != null) && (Lambda.count(FlxG.save.data.gameControls) == Lambda.count(gameControls)))
-			gameControls = FlxG.save.data.gameControls;
+		var didChange:Bool = false;
 
-		saveControls();
+		if ((FlxG.save.data.gameControls != null) && (Lambda.count(FlxG.save.data.gameControls) == Lambda.count(gameControls)))
+		{
+			var savedControls:Map<String, Dynamic> = FlxG.save.data.gameControls;
+			gameControls = savedControls;
+		}
+		else
+			didChange = true;
+
+		// only flush if controls were missing or changed count
+		if (didChange)
+			saveControls();
 	}
 
 	public static function saveSettings():Void

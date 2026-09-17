@@ -20,6 +20,8 @@ import meta.data.dependency.FNFTransition;
  */
 class MusicBeatState extends FlxUIState
 {
+	private static var _debugWatchAdded:Bool = false;
+
 	/**
 	 * Array of notes showing when each measure/bar STARTS in STEPS
 	 * Usually rounded up??
@@ -55,8 +57,12 @@ class MusicBeatState extends FlxUIState
 
 		super.create();
 
-		// For debugging
-		FlxG.watch.add(Conductor, "songPosition");
+		// For debugging (only add once using static flag)
+		if (!MusicBeatState._debugWatchAdded)
+		{
+			MusicBeatState._debugWatchAdded = true;
+			FlxG.watch.add(Conductor, "songPosition");
+		}
 		FlxG.watch.add(this, "curBeat");
 		FlxG.watch.add(this, "curStep");
 	}

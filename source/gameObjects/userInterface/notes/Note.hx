@@ -4,6 +4,7 @@ import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.graphics.frames.FlxAtlasFrames;
 import flixel.math.FlxMath;
+import flixel.math.FlxRect;
 import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
 import gameObjects.userInterface.notes.*;
@@ -43,6 +44,7 @@ class Note extends FNFSprite
 	public var noteVisualOffset:Float = 0;
 	public var noteSpeed:Float = 0;
 	public var noteDirection:Float = 0;
+	public var noteDirectionRad:Float = 0; // cached radians of noteDirection
 
 	public var parentNote:Note;
 	public var childrenNotes:Array<Note> = [];
@@ -51,6 +53,34 @@ class Note extends FNFSprite
 
 	// it has come to this.
 	public var endHoldOffset:Float = Math.NEGATIVE_INFINITY;
+
+	@:noCompletion
+	override function set_clipRect(rect:FlxRect):FlxRect
+	{
+		clipRect = rect;
+		if (frames != null && animation.curAnim != null)
+			frame = frames.frames[animation.curAnim.curIndex];
+		return rect;
+	}
+
+	var _noteLastClipRect:FlxRect = FlxRect.get(Math.NaN);
+
+	@:noCompletion
+	override function checkClipRect()
+	{
+		if (frames == null
+			|| (clipRect == null && Math.isNaN(_noteLastClipRect.x))
+			|| (clipRect != null && clipRect.equals(_noteLastClipRect)))
+			return;
+
+		if (animation.curAnim != null)
+			frame = frames.frames[animation.curAnim.curIndex];
+
+		if (clipRect == null)
+			_noteLastClipRect.set(Math.NaN);
+		else
+			_noteLastClipRect.copyFrom(clipRect);
+	}
 
 	public function new(strumTime:Float, noteData:Int, noteAlt:Float, ?prevNote:Note, ?sustainNote:Bool = false)
 	{

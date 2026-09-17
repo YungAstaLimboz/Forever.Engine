@@ -51,7 +51,7 @@ class Main extends Sprite
 		Enough of that, here's how it works
 		[ [songs to use], [characters in songs], [color of week], name of week ]
 	**/
-	public static var gameWeeks:Array<Dynamic> = [
+	public static var gameWeeks:Array<Array<Dynamic>> = [
 		[ // Week 0 / Tutorial
 			['Tutorial'],
 			['gf'],
@@ -177,6 +177,9 @@ class Main extends Sprite
 	 */
 	public static function switchState(target:FlxState)
 	{
+		// flush any pending save data before transitioning (safety net against crashes)
+		FlxG.save.flush();
+
 		// Custom made Trans in
 		if (!FlxTransitionableState.skipNextTransIn)
 		{

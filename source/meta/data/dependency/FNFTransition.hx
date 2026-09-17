@@ -101,8 +101,10 @@ class FNFTransition extends MusicBeatSubState
 	{
 		if (leTween != null)
 		{
-			finishCallback();
+			if (finishCallback != null)
+				finishCallback();
 			leTween.cancel();
+			leTween = null;
 		}
 		super.destroy();
 	}
