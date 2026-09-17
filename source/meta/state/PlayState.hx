@@ -1448,14 +1448,20 @@ class PlayState extends MusicBeatState
 
 	function resyncVocals():Void
 	{
-		//trace('resyncing vocal time ${vocals.time}');
-		songMusic.pause();
-		vocals.pause();
-		Conductor.songPosition = songMusic.time;
-		vocals.time = Conductor.songPosition;
+		if (songMusic == null)
+			return;
+
+		// ensure music is playing to get an accurate time reading
+		// (no-op if already playing — avoids the brief silence gap from pause/play)
 		songMusic.play();
-		vocals.play();
-		//trace('new vocal time ${Conductor.songPosition}');
+		Conductor.songPosition = songMusic.time;
+
+		// sync vocals to the instrumental if they exist and have audio data
+		if (vocals != null && songMusic.time < vocals.length)
+		{
+			vocals.time = songMusic.time;
+			vocals.play();
+		}
 	}
 
 	override function stepHit()
@@ -1554,7 +1560,8 @@ class PlayState extends MusicBeatState
 			{
 				//	trace('nulled song');
 				songMusic.pause();
-				vocals.pause();
+				if (vocals != null)
+					vocals.pause();
 				//	trace('nulled song finished');
 			}
 		}
